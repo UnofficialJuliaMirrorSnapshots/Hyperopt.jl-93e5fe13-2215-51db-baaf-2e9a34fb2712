@@ -1,7 +1,7 @@
 module Hyperopt
 
 export Hyperoptimizer, @hyperopt, @phyperopt, printmin, printmax
-export RandomSampler, BlueNoiseSampler, LHSampler, CLHSampler, Continuous, Categorical
+export RandomSampler, BlueNoiseSampler, LHSampler, CLHSampler, Continuous, Categorical, GPSampler, Max, Min
 
 using LinearAlgebra, Statistics
 using Juno
@@ -12,6 +12,7 @@ using Parameters
 using RecipesBase
 using Distributed
 using LatinHypercubeSampling
+using BayesianOptimization, GaussianProcesses
 
 abstract type Sampler end
 @with_kw struct Hyperoptimizer
@@ -93,7 +94,7 @@ macro phyperopt(ex)
     quote
         function workaround_function()
             ho = Hyperoptimizer(iterations = $(esc(candidates[1])), params = $(esc(params[2:end])), candidates = $(Expr(:tuple, esc.(candidates[2:end])...)), sampler=$(esc(sampler_)))
-
+            ho.sampler isa GPSampler && error("We currently do not support running the GPSampler in parallel. If this is an issue, open an issue ;)")
             res = pmap(1:ho.iterations) do i
                 $(Expr(:tuple, esc.(params)...)),_ = iterate(ho,i)
                 res = $(esc(ex.args[2])) # ex.args[2] = Body of the For loop
@@ -133,30 +134,5 @@ function printmax(ho::Hyperoptimizer)
     end
 end
 
-
-@recipe function plot(ho::Hyperoptimizer)
-    N = length(ho.params)
-    layout --> N
-    for i = 1:N
-        params = getindex.(ho.history, i)
-        perm = sortperm(params)
-        ylabel --> "Function value"
-        seriestype --> :scatter
-        @series begin
-            xlabel --> ho.params[i]
-            subplot --> i
-            label --> "Sampled points"
-            legend --> false
-            if /(extrema(params)...) < 2e-2 && minimum(params) > 0
-                xscale --> :log10
-            end
-            if /(extrema(ho.results)...) < 2e-2 && minimum(ho.results) > 0
-                yscale --> :log10
-            end
-            params[perm], ho.results[perm]
-        end
-
-    end
-end
-
+include("plotting.jl")
 end # module
